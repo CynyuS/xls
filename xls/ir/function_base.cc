@@ -94,6 +94,13 @@ absl::StatusOr<Stage> Stage::Clone(
   if (inputs_valid_ != nullptr) {
     XLS_ASSIGN_OR_RETURN(cloned_stage.inputs_valid_, map_node(inputs_valid_));
   }
+  if (outputs_ready_ != nullptr) {
+    XLS_ASSIGN_OR_RETURN(cloned_stage.outputs_ready_, map_node(outputs_ready_));
+  }
+  if (active_inputs_valid_ != nullptr) {
+    XLS_ASSIGN_OR_RETURN(cloned_stage.active_inputs_valid_,
+                         map_node(active_inputs_valid_));
+  }
   if (outputs_valid_ != nullptr) {
     XLS_ASSIGN_OR_RETURN(cloned_stage.outputs_valid_, map_node(outputs_valid_));
   }
@@ -109,6 +116,20 @@ std::ostream& operator<<(std::ostream& os, const FunctionBase::Kind& kind) {
     case FunctionBase::Kind::kBlock:
       return os << "block";
   }
+}
+
+void FunctionBase::MoveFrom(FunctionBase& other) {
+  for (std::unique_ptr<Node>& node : other.nodes_) {
+    node->function_base_ = this;
+    AddNodeInternal(std::move(node));
+  }
+  node_to_stage_ = std::move(other.node_to_stage_);
+
+  other.nodes_.clear();
+  other.node_iterators_.clear();
+  other.next_values_by_state_read_.clear();
+  other.params_.clear();
+  other.node_to_stage_.clear();
 }
 
 std::vector<std::string> FunctionBase::AttributeIrStrings() const {

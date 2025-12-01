@@ -351,16 +351,14 @@ std::string Block::DumpIr() const {
 
       const Stage& stage = stages_[stage_idx];
       CHECK(stage.IsControlled());
-      absl::StrAppendFormat(
-          &res, "  controlled_stage(%s%s) {\n", stage.inputs_valid()->GetName(),
-          stage.contains(stage.outputs_valid())
-              ? ""
-              : absl::StrCat(", outputs_valid=",
-                             stage.outputs_valid()->GetName()));
+      absl::StrAppendFormat(&res, "  controlled_stage(%s, %s) {\n",
+                            stage.inputs_valid()->GetName(),
+                            stage.outputs_ready()->GetName());
       for (Node* node : staged_nodes[stage_idx]) {
-        absl::StrAppendFormat(&res, "    %s%s\n",
-                              node == stage.outputs_valid() ? "ret " : "",
-                              node->ToString());
+        absl::StrAppend(
+            &res, "    ", (node == stage.outputs_valid() ? "ret " : ""),
+            (node == stage.active_inputs_valid() ? "active_inputs_valid " : ""),
+            node->ToString(), "\n");
       }
       absl::StrAppend(&res, "  }\n");
     }
@@ -1134,6 +1132,12 @@ absl::StatusOr<bool> Block::RemoveNodeFromStage(Node* node) {
     return false;
   }
   int64_t stage_index = it->second;
+  Stage& stage = stages_[stage_index];
+  if (stage.active_inputs_valid() == node || stage.outputs_valid() == node) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "Node %s has implicit uses in stage %d and cannot be removed.",
+        node->GetName(), stage_index));
+  }
   node_to_stage_.erase(it);
   stages_[stage_index].erase(node);
   return true;
@@ -1142,8 +1146,8 @@ absl::StatusOr<bool> Block::RemoveNodeFromStage(Node* node) {
 absl::StatusOr<Block*> Block::Clone(
     std::string_view new_name, Package* target_package,
     const absl::flat_hash_map<std::string, std::string>& reg_name_map,
-    const absl::flat_hash_map<const Block*, Block*>& block_instantiation_map)
-    const {
+    const absl::flat_hash_map<const Block*, Block*>& block_instantiation_map,
+    bool preserve_schedule) const {
   absl::flat_hash_map<Node*, Node*> original_to_clone;
   absl::flat_hash_map<Register*, Register*> register_map;
   absl::flat_hash_map<Instantiation*, Instantiation*> instantiation_map;
@@ -1153,8 +1157,9 @@ absl::StatusOr<Block*> Block::Clone(
   }
 
   Block* cloned_block = target_package->AddBlock(
-      IsScheduled() ? std::make_unique<ScheduledBlock>(new_name, target_package)
-                    : std::make_unique<Block>(new_name, target_package));
+      (IsScheduled() && preserve_schedule)
+          ? std::make_unique<ScheduledBlock>(new_name, target_package)
+          : std::make_unique<Block>(new_name, target_package));
 
   std::optional<std::string> clk_port_name;
   for (const Port& port : GetPorts()) {
@@ -1316,7 +1321,7 @@ absl::StatusOr<Block*> Block::Clone(
     XLS_RETURN_IF_ERROR(cloned_block->ReorderPorts(correct_ordering));
   }
 
-  if (IsScheduled()) {
+  if (IsScheduled() && preserve_schedule) {
     cloned_block->ClearStages();
     for (const Stage& stage : stages()) {
       XLS_ASSIGN_OR_RETURN(Stage cloned_stage, stage.Clone(original_to_clone));

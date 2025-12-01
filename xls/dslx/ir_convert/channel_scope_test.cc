@@ -54,9 +54,12 @@ using ::xls::proto_testing::EqualsProto;
 
 constexpr std::string_view kPackageName = "the_package";
 
-class ChannelScopeTest : public ::testing::Test {
+// TODO: https://github.com/google/xls/issues/2078 - remove the parameter
+// and only test with lowering to proc-scoped channels.
+class ChannelScopeTest : public ::testing::TestWithParam<bool> {
  public:
   void SetUp() override {
+    options_.lower_to_proc_scoped_channels = GetParam();
     conv_.package = std::make_unique<Package>(kPackageName);
     import_data_ = std::make_unique<ImportData>(CreateImportDataForTest());
     module_ = std::make_unique<Module>("test", /*fs_path=*/std::nullopt,
@@ -135,19 +138,23 @@ class ChannelScopeTest : public ::testing::Test {
   std::unique_ptr<ChannelScope> scope_;
 };
 
-TEST_F(ChannelScopeTest, DefineChannel) {
+TEST_P(ChannelScopeTest, DefineChannel) {
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel");
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
                            scope_->DefineChannelOrArray(decl));
   EXPECT_TRUE(std::holds_alternative<Channel*>(result));
   Channel* channel = std::get<Channel*>(result);
-  EXPECT_EQ(channel->name(), "the_package__the_channel");
+  if (GetParam()) {
+    EXPECT_EQ(channel->name(), "the_channel");
+  } else {
+    EXPECT_EQ(channel->name(), "the_package__the_channel");
+  }
   EXPECT_EQ(channel->supported_ops(), ChannelOps::kSendReceive);
   EXPECT_TRUE(channel->type()->IsBits());
   EXPECT_THAT(channel->initial_values(), IsEmpty());
 }
 
-TEST_F(ChannelScopeTest, DefineChannelArray) {
+TEST_P(ChannelScopeTest, DefineChannelArray) {
   std::vector<Expr*> dims = {MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -155,138 +162,96 @@ TEST_F(ChannelScopeTest, DefineChannelArray) {
   EXPECT_TRUE(std::holds_alternative<ChannelArray*>(result));
 }
 
-TEST_F(ChannelScopeTest, DefineBoundaryChannel) {
+TEST_P(ChannelScopeTest, DefineBoundaryChannel) {
   Param* param = MakeU32Param("the_channel", ChannelDirection::kIn);
   XLS_ASSERT_OK_AND_ASSIGN(
       ChannelOrArray result,
       scope_->DefineBoundaryChannelOrArray(param, type_info_));
   EXPECT_TRUE(std::holds_alternative<Channel*>(result));
-  EXPECT_THAT(conv_.interface.channels(), ElementsAre(EqualsProto(R"pb(
-                name: "the_package__the_channel"
-                type { type_enum: BITS bit_count: 32 }
-                direction: IN
-              )pb")));
+  if (GetParam()) {
+    EXPECT_THAT(conv_.interface.channels(), ElementsAre(EqualsProto(R"pb(
+                  name: "the_channel"
+                  type { type_enum: BITS bit_count: 32 }
+                  direction: IN
+                )pb")));
+  } else {
+    EXPECT_THAT(conv_.interface.channels(), ElementsAre(EqualsProto(R"pb(
+                  name: "the_package__the_channel"
+                  type { type_enum: BITS bit_count: 32 }
+                  direction: IN
+                )pb")));
+  }
 }
 
-TEST_F(ChannelScopeTest, DefineBoundaryInputChannelArray) {
+TEST_P(ChannelScopeTest, DefineBoundaryInputChannelArray) {
   std::vector<Expr*> dims = {MakeU32("2")};
   Param* param = MakeU32Param("the_channel", ChannelDirection::kIn, dims);
   XLS_ASSERT_OK_AND_ASSIGN(
       ChannelOrArray result,
       scope_->DefineBoundaryChannelOrArray(param, type_info_));
   EXPECT_TRUE(std::holds_alternative<ChannelArray*>(result));
-  EXPECT_THAT(conv_.interface.channels(),
-              ElementsAre(EqualsProto(R"pb(
-                            name: "the_package__the_channel__0"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: IN
-                          )pb"),
-                          EqualsProto(R"pb(
-                            name: "the_package__the_channel__1"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: IN
-                          )pb")));
+  if (GetParam()) {
+    EXPECT_THAT(conv_.interface.channels(),
+                ElementsAre(EqualsProto(R"pb(
+                              name: "the_channel__0"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: IN
+                            )pb"),
+                            EqualsProto(R"pb(
+                              name: "the_channel__1"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: IN
+                            )pb")));
+  } else {
+    EXPECT_THAT(conv_.interface.channels(),
+                ElementsAre(EqualsProto(R"pb(
+                              name: "the_package__the_channel__0"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: IN
+                            )pb"),
+                            EqualsProto(R"pb(
+                              name: "the_package__the_channel__1"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: IN
+                            )pb")));
+  }
 }
 
-TEST_F(ChannelScopeTest, DefineBoundaryOutputChannelArray) {
+TEST_P(ChannelScopeTest, DefineBoundaryOutputChannelArray) {
   std::vector<Expr*> dims = {MakeU32("2")};
   Param* param = MakeU32Param("the_channel", ChannelDirection::kOut, dims);
   XLS_ASSERT_OK_AND_ASSIGN(
       ChannelOrArray result,
       scope_->DefineBoundaryChannelOrArray(param, type_info_));
   EXPECT_TRUE(std::holds_alternative<ChannelArray*>(result));
-  EXPECT_THAT(conv_.interface.channels(),
-              ElementsAre(EqualsProto(R"pb(
-                            name: "the_package__the_channel__0"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: OUT
-                          )pb"),
-                          EqualsProto(R"pb(
-                            name: "the_package__the_channel__1"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: OUT
-                          )pb")));
+  if (GetParam()) {
+    EXPECT_THAT(conv_.interface.channels(),
+                ElementsAre(EqualsProto(R"pb(
+                              name: "the_channel__0"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: OUT
+                            )pb"),
+                            EqualsProto(R"pb(
+                              name: "the_channel__1"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: OUT
+                            )pb")));
+  } else {
+    EXPECT_THAT(conv_.interface.channels(),
+                ElementsAre(EqualsProto(R"pb(
+                              name: "the_package__the_channel__0"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: OUT
+                            )pb"),
+                            EqualsProto(R"pb(
+                              name: "the_package__the_channel__1"
+                              type { type_enum: BITS bit_count: 32 }
+                              direction: OUT
+                            )pb")));
+  }
 }
 
-TEST_F(ChannelScopeTest, DefineChannelProcScoped) {
-  options_.lower_to_proc_scoped_channels = true;
-  ChannelDecl* decl = MakeU32ChannelDecl("the_channel");
-  XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
-                           scope_->DefineChannelOrArray(decl));
-  EXPECT_TRUE(std::holds_alternative<Channel*>(result));
-  Channel* channel = std::get<Channel*>(result);
-  EXPECT_EQ(channel->name(), "the_channel");
-  EXPECT_EQ(channel->supported_ops(), ChannelOps::kSendReceive);
-  EXPECT_TRUE(channel->type()->IsBits());
-  EXPECT_THAT(channel->initial_values(), IsEmpty());
-}
-
-TEST_F(ChannelScopeTest, DefineChannelArrayProcScoped) {
-  options_.lower_to_proc_scoped_channels = true;
-  std::vector<Expr*> dims = {MakeU32("5")};
-  ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
-  XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
-                           scope_->DefineChannelOrArray(decl));
-  EXPECT_TRUE(std::holds_alternative<ChannelArray*>(result));
-}
-
-TEST_F(ChannelScopeTest, DefineBoundaryChannelProcScoped) {
-  options_.lower_to_proc_scoped_channels = true;
-  Param* param = MakeU32Param("the_channel", ChannelDirection::kIn);
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelOrArray result,
-      scope_->DefineBoundaryChannelOrArray(param, type_info_));
-  EXPECT_TRUE(std::holds_alternative<Channel*>(result));
-  EXPECT_THAT(conv_.interface.channels(), ElementsAre(EqualsProto(R"pb(
-                name: "the_channel"
-                type { type_enum: BITS bit_count: 32 }
-                direction: IN
-              )pb")));
-}
-
-TEST_F(ChannelScopeTest, DefineBoundaryInputChannelArrayProcScoped) {
-  std::vector<Expr*> dims = {MakeU32("2")};
-  Param* param = MakeU32Param("the_channel", ChannelDirection::kIn, dims);
-  options_.lower_to_proc_scoped_channels = true;
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelOrArray result,
-      scope_->DefineBoundaryChannelOrArray(param, type_info_));
-  EXPECT_TRUE(std::holds_alternative<ChannelArray*>(result));
-  EXPECT_THAT(conv_.interface.channels(),
-              ElementsAre(EqualsProto(R"pb(
-                            name: "the_channel__0"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: IN
-                          )pb"),
-                          EqualsProto(R"pb(
-                            name: "the_channel__1"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: IN
-                          )pb")));
-}
-
-TEST_F(ChannelScopeTest, DefineBoundaryOutputChannelArrayProcScoped) {
-  options_.lower_to_proc_scoped_channels = true;
-  std::vector<Expr*> dims = {MakeU32("2")};
-  Param* param = MakeU32Param("the_channel", ChannelDirection::kOut, dims);
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelOrArray result,
-      scope_->DefineBoundaryChannelOrArray(param, type_info_));
-  EXPECT_TRUE(std::holds_alternative<ChannelArray*>(result));
-  EXPECT_THAT(conv_.interface.channels(),
-              ElementsAre(EqualsProto(R"pb(
-                            name: "the_channel__0"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: OUT
-                          )pb"),
-                          EqualsProto(R"pb(
-                            name: "the_channel__1"
-                            type { type_enum: BITS bit_count: 32 }
-                            direction: OUT
-                          )pb")));
-}
-
-TEST_F(ChannelScopeTest, AssociateWithExistingChannelDecl) {
+TEST_P(ChannelScopeTest, AssociateWithExistingChannelDecl) {
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel");
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
                            scope_->DefineChannelOrArray(decl));
@@ -297,7 +262,7 @@ TEST_F(ChannelScopeTest, AssociateWithExistingChannelDecl) {
       std::get<Channel*>(result));
 }
 
-TEST_F(ChannelScopeTest, AssociateWithExistingChannelArrayDecl) {
+TEST_P(ChannelScopeTest, AssociateWithExistingChannelArrayDecl) {
   std::vector<Expr*> dims = {MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -309,7 +274,7 @@ TEST_F(ChannelScopeTest, AssociateWithExistingChannelArrayDecl) {
       std::get<ChannelArray*>(result));
 }
 
-TEST_F(ChannelScopeTest, AssociateWithExistingChannelOrArrayNonexistent) {
+TEST_P(ChannelScopeTest, AssociateWithExistingChannelOrArrayNonexistent) {
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel");
   NameDef* name_def = module_->Make<NameDef>(Span::Fake(), "ch", nullptr);
   EXPECT_THAT(
@@ -317,7 +282,7 @@ TEST_F(ChannelScopeTest, AssociateWithExistingChannelOrArrayNonexistent) {
       StatusIs(absl::StatusCode::kNotFound));
 }
 
-TEST_F(ChannelScopeTest, AssociateWithExistingChannel) {
+TEST_P(ChannelScopeTest, AssociateWithExistingChannel) {
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel");
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
                            scope_->DefineChannelOrArray(decl));
@@ -327,7 +292,7 @@ TEST_F(ChannelScopeTest, AssociateWithExistingChannel) {
       scope_->AssociateWithExistingChannelOrArray(ProcId{}, name_def, result));
 }
 
-TEST_F(ChannelScopeTest, AssociateWithExistingChannelArray) {
+TEST_P(ChannelScopeTest, AssociateWithExistingChannelArray) {
   std::vector<Expr*> dims = {MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -338,7 +303,7 @@ TEST_F(ChannelScopeTest, AssociateWithExistingChannelArray) {
       scope_->AssociateWithExistingChannelOrArray(ProcId{}, name_def, result));
 }
 
-TEST_F(ChannelScopeTest, AssociateWithExistingChannelArrayDifferentProcIds) {
+TEST_P(ChannelScopeTest, AssociateWithExistingChannelArrayDifferentProcIds) {
   std::vector<Expr*> dims = {MakeU32("5")};
   ChannelDecl* arr1_decl = MakeU32ChannelDecl("arr1", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray arr1,
@@ -365,58 +330,30 @@ TEST_F(ChannelScopeTest, AssociateWithExistingChannelArrayDifferentProcIds) {
 
   // Trying to evaluate `ch[some_index]` now should give us a different object
   // depending on the proc ID.
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelRef test_channel1_ref,
-      scope_->GetChannelForArrayIndex(proc_id1, CreateIndexOp(ch_ref, {"2"})));
-  EXPECT_EQ(std::get<Channel*>(test_channel1_ref)->name(),
-            "the_package__arr1__2");
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelRef test_channel2_ref,
-      scope_->GetChannelForArrayIndex(proc_id2, CreateIndexOp(ch_ref, {"2"})));
-  EXPECT_EQ(std::get<Channel*>(test_channel2_ref)->name(),
-            "the_package__arr2__2");
+  if (GetParam()) {
+    XLS_ASSERT_OK_AND_ASSIGN(ChannelRef test_channel1_ref,
+                             scope_->GetChannelForArrayIndex(
+                                 proc_id1, CreateIndexOp(ch_ref, {"2"})));
+    EXPECT_EQ(std::get<Channel*>(test_channel1_ref)->name(), "arr1__2");
+    XLS_ASSERT_OK_AND_ASSIGN(ChannelRef test_channel2_ref,
+                             scope_->GetChannelForArrayIndex(
+                                 proc_id2, CreateIndexOp(ch_ref, {"2"})));
+    EXPECT_EQ(std::get<Channel*>(test_channel2_ref)->name(), "arr2__2");
+  } else {
+    XLS_ASSERT_OK_AND_ASSIGN(ChannelRef test_channel1_ref,
+                             scope_->GetChannelForArrayIndex(
+                                 proc_id1, CreateIndexOp(ch_ref, {"2"})));
+    EXPECT_EQ(std::get<Channel*>(test_channel1_ref)->name(),
+              "the_package__arr1__2");
+    XLS_ASSERT_OK_AND_ASSIGN(ChannelRef test_channel2_ref,
+                             scope_->GetChannelForArrayIndex(
+                                 proc_id2, CreateIndexOp(ch_ref, {"2"})));
+    EXPECT_EQ(std::get<Channel*>(test_channel2_ref)->name(),
+              "the_package__arr2__2");
+  }
 }
 
-TEST_F(ChannelScopeTest,
-       AssociateWithExistingChannelArrayDifferentProcIdsProcScoped) {
-  options_.lower_to_proc_scoped_channels = true;
-  std::vector<Expr*> dims = {MakeU32("5")};
-  ChannelDecl* arr1_decl = MakeU32ChannelDecl("arr1", dims);
-  XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray arr1,
-                           scope_->DefineChannelOrArray(arr1_decl));
-  ChannelDecl* arr2_decl = MakeU32ChannelDecl("arr2", dims);
-  XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray arr2,
-                           scope_->DefineChannelOrArray(arr2_decl));
-  EXPECT_TRUE(std::holds_alternative<ChannelArray*>(arr1));
-  EXPECT_TRUE(std::holds_alternative<ChannelArray*>(arr2));
-
-  NameDef* ch_def = module_->Make<NameDef>(Span::Fake(), "ch", nullptr);
-  NameRef* ch_ref = module_->Make<NameRef>(Span::Fake(), "ch", ch_def);
-  FileTable file_table;
-  auto [proc_a_module, proc_a] = CreateEmptyProc(file_table, "A");
-  auto [proc_b_module, proc_b] = CreateEmptyProc(file_table, "B");
-  // Simulate two spawns of B from A, the first passing `arr1` for `ch` and the
-  // second passing `arr2` for `ch`.
-  ProcId proc_id1{.proc_instance_stack = {{proc_a, 0}, {proc_b, 0}}};
-  ProcId proc_id2{.proc_instance_stack = {{proc_a, 0}, {proc_b, 1}}};
-  XLS_EXPECT_OK(
-      scope_->AssociateWithExistingChannelOrArray(proc_id1, ch_def, arr1_decl));
-  XLS_EXPECT_OK(
-      scope_->AssociateWithExistingChannelOrArray(proc_id2, ch_def, arr2_decl));
-
-  // Trying to evaluate `ch[some_index]` now should give us a different object
-  // depending on the proc ID.
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelRef test_channel1_ref,
-      scope_->GetChannelForArrayIndex(proc_id1, CreateIndexOp(ch_ref, {"2"})));
-  EXPECT_EQ(std::get<Channel*>(test_channel1_ref)->name(), "arr1__2");
-  XLS_ASSERT_OK_AND_ASSIGN(
-      ChannelRef test_channel2_ref,
-      scope_->GetChannelForArrayIndex(proc_id2, CreateIndexOp(ch_ref, {"2"})));
-  EXPECT_EQ(std::get<Channel*>(test_channel2_ref)->name(), "arr2__2");
-}
-
-TEST_F(ChannelScopeTest, HandleChannelIndex1DValid) {
+TEST_P(ChannelScopeTest, HandleChannelIndex1DValid) {
   std::vector<Expr*> dims = {MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -425,11 +362,15 @@ TEST_F(ChannelScopeTest, HandleChannelIndex1DValid) {
   XLS_ASSERT_OK_AND_ASSIGN(
       ChannelRef channel_ref,
       scope_->GetChannelForArrayIndex(ProcId{}, CreateIndexOp(decl, {"2"})));
-  EXPECT_EQ(std::get<Channel*>(channel_ref)->name(),
-            "the_package__the_channel__2");
+  if (GetParam()) {
+    EXPECT_EQ(std::get<Channel*>(channel_ref)->name(), "the_channel__2");
+  } else {
+    EXPECT_EQ(std::get<Channel*>(channel_ref)->name(),
+              "the_package__the_channel__2");
+  }
 }
 
-TEST_F(ChannelScopeTest, HandleChannelIndex2DValid) {
+TEST_P(ChannelScopeTest, HandleChannelIndex2DValid) {
   std::vector<Expr*> dims = {MakeU32("2"), MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -438,11 +379,15 @@ TEST_F(ChannelScopeTest, HandleChannelIndex2DValid) {
   XLS_ASSERT_OK_AND_ASSIGN(ChannelRef channel_ref,
                            scope_->GetChannelForArrayIndex(
                                ProcId{}, CreateIndexOp(decl, {"4", "1"})));
-  EXPECT_EQ(std::get<Channel*>(channel_ref)->name(),
-            "the_package__the_channel__4_1");
+  if (GetParam()) {
+    EXPECT_EQ(std::get<Channel*>(channel_ref)->name(), "the_channel__4_1");
+  } else {
+    EXPECT_EQ(std::get<Channel*>(channel_ref)->name(),
+              "the_package__the_channel__4_1");
+  }
 }
 
-TEST_F(ChannelScopeTest, HandleChannelIndexWithNonArray) {
+TEST_P(ChannelScopeTest, HandleChannelIndexWithNonArray) {
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel");
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
                            scope_->DefineChannelOrArray(decl));
@@ -452,7 +397,7 @@ TEST_F(ChannelScopeTest, HandleChannelIndexWithNonArray) {
       StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_F(ChannelScopeTest, HandleChannelIndexWithTooManyIndices) {
+TEST_P(ChannelScopeTest, HandleChannelIndexWithTooManyIndices) {
   std::vector<Expr*> dims = {MakeU32("2"), MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -463,7 +408,7 @@ TEST_F(ChannelScopeTest, HandleChannelIndexWithTooManyIndices) {
               StatusIs(absl::StatusCode::kNotFound));
 }
 
-TEST_F(ChannelScopeTest, HandleChannelIndexWithInsufficientIndices) {
+TEST_P(ChannelScopeTest, HandleChannelIndexWithInsufficientIndices) {
   std::vector<Expr*> dims = {MakeU32("2"), MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -474,7 +419,7 @@ TEST_F(ChannelScopeTest, HandleChannelIndexWithInsufficientIndices) {
       StatusIs(absl::StatusCode::kNotFound));
 }
 
-TEST_F(ChannelScopeTest, HandleSubarrayIndex) {
+TEST_P(ChannelScopeTest, HandleSubarrayIndex) {
   std::vector<Expr*> dims = {MakeU32("2"), MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -496,11 +441,15 @@ TEST_F(ChannelScopeTest, HandleSubarrayIndex) {
   XLS_ASSERT_OK_AND_ASSIGN(ChannelRef channel_ref,
                            scope_->GetChannelForArrayIndex(
                                ProcId{}, CreateIndexOp(subarray_ref, {"1"})));
-  EXPECT_EQ(std::get<Channel*>(channel_ref)->name(),
-            "the_package__the_channel__4_1");
+  if (GetParam()) {
+    EXPECT_EQ(std::get<Channel*>(channel_ref)->name(), "the_channel__4_1");
+  } else {
+    EXPECT_EQ(std::get<Channel*>(channel_ref)->name(),
+              "the_package__the_channel__4_1");
+  }
 }
 
-TEST_F(ChannelScopeTest, HandleChannelIndexWithOutOfRangeIndices) {
+TEST_P(ChannelScopeTest, HandleChannelIndexWithOutOfRangeIndices) {
   std::vector<Expr*> dims = {MakeU32("2"), MakeU32("5")};
   ChannelDecl* decl = MakeU32ChannelDecl("the_channel", dims);
   XLS_ASSERT_OK_AND_ASSIGN(ChannelOrArray result,
@@ -510,6 +459,13 @@ TEST_F(ChannelScopeTest, HandleChannelIndexWithOutOfRangeIndices) {
                                               CreateIndexOp(decl, {"5", "0"})),
               StatusIs(absl::StatusCode::kNotFound));
 }
+
+INSTANTIATE_TEST_SUITE_P(ChannelScopeTestSuite, ChannelScopeTest,
+                         testing::Values(false, true),
+                         [](const testing::TestParamInfo<bool> value) {
+                           return value.param ? "ProcScopedChannels"
+                                              : "GlobalChannels";
+                         });
 
 }  // namespace
 }  // namespace xls::dslx

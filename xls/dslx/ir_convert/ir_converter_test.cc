@@ -800,12 +800,30 @@ fn main(input: u8[2]) -> u8[2] {
   ExpectIr(converted);
 }
 
-// TODO(https://github.com/google/xls/issues/1289): Need to be able to convert
-// enumerate builtin.
-TEST_F(IrConverterTest, DISABLED_ArrayEnumerate) {
+TEST_F(IrConverterTest, ArrayEnumerate) {
   constexpr std::string_view program = R"(
-fn main(array: u8[4]) -> (u32, u8)[4]) {
+fn main(array: u8[4]) -> (u32, u8)[4] {
   enumerate(array)
+}
+)";
+  XLS_ASSERT_OK_AND_ASSIGN(std::string converted,
+                           ConvertOneFunctionForTest(program, "main"));
+  ExpectIr(converted);
+}
+
+// TODO: github.com/google/xls/issues/1289 - Need to support this to enumerate
+// in a for-loop.
+TEST_F(IrConverterTest, DISABLED_LoopThroughTupleArray) {
+  constexpr std::string_view program = R"(
+pub fn make_bool_array() -> bool[2] {
+    let enumerated = [(u32:0, u32:0), (u32:1, u32:1)];
+    for ((_, i), x): ((u32, u32), bool[2]) in enumerated {
+        update(x, i, true)
+    }(zero!<bool[2]>())
+}
+
+fn main() -> bool[2] {
+  make_bool_array()
 }
 )";
   XLS_ASSERT_OK_AND_ASSIGN(std::string converted,
@@ -4242,6 +4260,25 @@ proc main {
 }
 
 TEST_F(IrConverterTest, MultipleSimpleProcs) {
+  constexpr std::string_view program = R"(
+proc p1 {
+  init { }
+  config() { () }
+  next(state: ()) { () }
+}
+
+proc p2 {
+  init { }
+  config() { () }
+  next(state: ()) { () }
+})";
+
+  XLS_ASSERT_OK_AND_ASSIGN(std::string converted,
+                           ConvertModuleForTest(program));
+  ExpectIr(converted);
+}
+
+TEST_F(IrConverterTest, MultipleSimpleProcsOneFunction) {
   // Tests that it properly assigns p2 as the top and ignores p1.
   constexpr std::string_view program = R"(
 proc p1 {
@@ -4942,9 +4979,9 @@ proc invalid {
   next(state: ()) { state }
 }
 
-proc main {
+pub proc main {
   init { }
-  config() { () }
+  config() { spawn invalid(u32:3); }
   next(state: ()) { state }
 }
 )";
@@ -5164,7 +5201,7 @@ proc invalid {
 
 pub proc main {
   init { }
-  config() { () }
+  config(in_chans: chan<u32>[3] in) { spawn invalid(in_chans, u32:3); }
   next(state: ()) { state }
 }
 )";
@@ -5187,7 +5224,7 @@ proc invalid {
 
 pub proc main {
   init { }
-  config() { () }
+  config() { spawn invalid(u32[3]:[3, 4, 5]); }
   next(state: ()) { state }
 }
 )";
