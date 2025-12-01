@@ -1,0 +1,38 @@
+package gemm
+
+file_number 0 "examples/gemm.x"
+
+fn ________gemm__gemm_counted_for_0_body_counted_for_0_body_counted_for_0_body(k: bits[32] id=19, C: bits[32][32][32] id=22, arg0: bits[32][32][32] id=23, arg1: bits[32][32][32] id=24, i: bits[32] id=25, j: bits[32] id=26) -> bits[32][32][32] {
+  literal.20: bits[32] = literal(value=0, id=20)
+  add.21: bits[32] = add(k, literal.20, id=21)
+  array_index.30: bits[32][32] = array_index(arg0, indices=[i], id=30, pos=[(0,5,53)])
+  array_index.32: bits[32][32] = array_index(arg1, indices=[add.21], id=32, pos=[(0,5,66)])
+  array_index.28: bits[32][32] = array_index(C, indices=[i], id=28, pos=[(0,5,39)])
+  array_index.31: bits[32] = array_index(array_index.30, indices=[add.21], id=31, pos=[(0,5,56)])
+  array_index.33: bits[32] = array_index(array_index.32, indices=[j], id=33, pos=[(0,5,69)])
+  array_index.29: bits[32] = array_index(array_index.28, indices=[j], id=29, pos=[(0,5,42)])
+  umul.34: bits[32] = umul(array_index.31, array_index.33, id=34, pos=[(0,5,56)])
+  array_index.27: bits[32][32] = array_index(C, indices=[i], id=27, pos=[(0,5,29)])
+  add.35: bits[32] = add(array_index.29, umul.34, id=35, pos=[(0,5,42)])
+  array_update.36: bits[32][32] = array_update(array_index.27, add.35, indices=[j], id=36, pos=[(0,5,27)])
+  ret array_update.37: bits[32][32][32] = array_update(C, array_update.36, indices=[i], id=37, pos=[(0,5,14)])
+}
+
+fn ______gemm__gemm_counted_for_0_body_counted_for_0_body(j: bits[32] id=12, C: bits[32][32][32] id=15, arg0: bits[32][32][32] id=16, arg1: bits[32][32][32] id=17, i: bits[32] id=18) -> bits[32][32][32] {
+  literal.13: bits[32] = literal(value=0, id=13)
+  add.14: bits[32] = add(j, literal.13, id=14)
+  ret counted_for.38: bits[32][32][32] = counted_for(C, trip_count=32, stride=1, body=________gemm__gemm_counted_for_0_body_counted_for_0_body_counted_for_0_body, invariant_args=[arg0, arg1, i, add.14], id=38)
+}
+
+fn ____gemm__gemm_counted_for_0_body(i: bits[32] id=6, C: bits[32][32][32] id=9, arg0: bits[32][32][32] id=10, arg1: bits[32][32][32] id=11) -> bits[32][32][32] {
+  literal.7: bits[32] = literal(value=0, id=7)
+  add.8: bits[32] = add(i, literal.7, id=8)
+  ret counted_for.39: bits[32][32][32] = counted_for(C, trip_count=32, stride=1, body=______gemm__gemm_counted_for_0_body_counted_for_0_body, invariant_args=[arg0, arg1, add.8], id=39)
+}
+
+top fn __gemm__gemm(arg0: bits[32][32][32] id=1, arg1: bits[32][32][32] id=2) -> bits[32][32][32] {
+  literal.3: bits[32] = literal(value=0, id=3, pos=[(0,1,37)])
+  array.4: bits[32][32] = array(literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, literal.3, id=4, pos=[(0,1,36)])
+  C_init: bits[32][32][32] = array(array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, array.4, id=5, pos=[(0,1,27)])
+  ret C: bits[32][32][32] = counted_for(C_init, trip_count=32, stride=1, body=____gemm__gemm_counted_for_0_body, invariant_args=[arg0, arg1], id=40)
+}

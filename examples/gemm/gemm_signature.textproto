@@ -1,0 +1,65 @@
+# proto-file: xls/codegen/module_signature.proto
+# proto-message: ModuleSignatureProto
+
+module_name: "gemm__top___gemm__gemm"
+data_ports {
+  direction: PORT_DIRECTION_INPUT
+  name: "arg0"
+  width: 32768
+  type {
+    type_enum: ARRAY
+    array_size: 32
+    array_element {
+      type_enum: ARRAY
+      array_size: 32
+      array_element {
+        type_enum: BITS
+        bit_count: 32
+      }
+    }
+  }
+}
+data_ports {
+  direction: PORT_DIRECTION_INPUT
+  name: "arg1"
+  width: 32768
+  type {
+    type_enum: ARRAY
+    array_size: 32
+    array_element {
+      type_enum: ARRAY
+      array_size: 32
+      array_element {
+        type_enum: BITS
+        bit_count: 32
+      }
+    }
+  }
+}
+data_ports {
+  direction: PORT_DIRECTION_OUTPUT
+  name: "out"
+  width: 32768
+  type {
+    type_enum: ARRAY
+    array_size: 32
+    array_element {
+      type_enum: ARRAY
+      array_size: 32
+      array_element {
+        type_enum: BITS
+        bit_count: 32
+      }
+    }
+  }
+}
+clock_name: "clk"
+reset {
+  name: "rst"
+  asynchronous: false
+  active_low: false
+}
+pipeline {
+  latency: 6
+  initiation_interval: 1
+}
